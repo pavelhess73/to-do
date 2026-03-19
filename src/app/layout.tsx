@@ -27,6 +27,8 @@ export const viewport = {
   themeColor: "#fafafa",
 };
 
+import Script from "next/script";
+
 export default function RootLayout({
   children,
 }: Readonly<{
@@ -37,7 +39,28 @@ export default function RootLayout({
       lang="en"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col">{children}</body>
+      <head>
+        <link rel="apple-touch-icon" href="/icons/icon-192x192.png" />
+      </head>
+      <body className="min-h-full flex flex-col">
+        {children}
+        <Script id="sw-register" strategy="afterInteractive">
+          {`
+            if ('serviceWorker' in navigator) {
+              window.addEventListener('load', function() {
+                navigator.serviceWorker.register('/sw.js').then(
+                  function(registration) {
+                    console.log('Service Worker registration successful');
+                  },
+                  function(err) {
+                    console.log('Service Worker registration failed: ', err);
+                  }
+                );
+              });
+            }
+          `}
+        </Script>
+      </body>
     </html>
   );
 }
