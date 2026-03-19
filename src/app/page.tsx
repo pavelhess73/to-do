@@ -2,20 +2,18 @@
 
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
-import { Plus, Trash2 } from "lucide-react";
+import { Plus, Check, Circle } from "lucide-react";
 
 type Note = {
   id: string;
-  title: string;
   content: string;
   created_at: string;
+  deleting?: boolean; // Pro animaci odškrtnutí
 };
 
 export default function Home() {
   const [notes, setNotes] = useState<Note[]>([]);
   const [loading, setLoading] = useState(true);
-  const [isAdding, setIsAdding] = useState(false);
-  const [newTitle, setNewTitle] = useState("");
   const [newContent, setNewContent] = useState("");
 
   useEffect(() => {
@@ -25,8 +23,7 @@ export default function Home() {
   async function fetchNotes() {
     try {
       setLoading(true);
-      if (!process.env.NEXT_PUBLIC_SUPABASE_URL) {
-        // Fallback for demo without DB
+      if (!process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL.includes("placeholder")) {
         setLoading(false);
         return;
       }
@@ -36,7 +33,7 @@ export default function Home() {
         .order("created_at", { ascending: false });
 
       if (error) {
-        console.error("Error fetching notes:", error.message);
+        console.error("Chyba při stahování:", error.message);
       } else {
         setNotes(data || []);
       }
@@ -47,133 +44,126 @@ export default function Home() {
     }
   }
 
-  async function addNote() {
-    if (!newTitle.trim() && !newContent.trim()) return;
+  async function addNote(e?: React.FormEvent) {
+    if (e) e.preventDefault();
+    if (!newContent.trim()) return;
 
-    if (!process.env.NEXT_PUBLIC_SUPABASE_URL) {
+    if (!process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL.includes("placeholder")) {
       const optimisticNote: Note = {
         id: Date.now().toString(),
-        title: newTitle,
         content: newContent,
         created_at: new Date().toISOString(),
       };
       setNotes([optimisticNote, ...notes]);
-      setIsAdding(false);
-      setNewTitle("");
       setNewContent("");
       return;
     }
+
+    const contentToAdd = newContent;
+    setNewContent(""); 
 
     const { data, error } = await supabase
       .from("notes")
-      .insert([{ title: newTitle, content: newContent }])
+      .insert([{ title: "", content: contentToAdd }])
       .select();
 
     if (!error && data) {
-      setNotes([data[0], ...notes]);
-      setIsAdding(false);
-      setNewTitle("");
-      setNewContent("");
+      setNotes((prev) => [data[0], ...prev]);
     }
   }
 
-  async function deleteNote(id: string) {
-    if (!process.env.NEXT_PUBLIC_SUPABASE_URL) {
-      setNotes(notes.filter((n) => n.id !== id));
-      return;
-    }
-    const { error } = await supabase.from("notes").delete().eq("id", id);
-    if (!error) {
-      setNotes(notes.filter((n) => n.id !== id));
-    }
+  async function completeTask(id: string) {
+    // 1. Spustíme animaci přeškrtnutí
+    setNotes((prev) => prev.map(n => n.id === id ? { ...n, deleting: true } : n));
+    
+    // 2. Počkáme 400ms na dokončení UI animace před skutečným smazáním
+    setTimeout(async () => {
+      if (!process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL.includes("placeholder")) {
+        setNotes((prev) => prev.filter((n) => n.id !== id));
+        return;
+      }
+      const { error } = await supabase.from("notes").delete().eq("id", id);
+      if (!error) {
+        setNotes((prev) => prev.filter((n) => n.id !== id));
+      }
+    }, 400);
   }
 
   return (
-    <main className="min-h-screen bg-neutral-950 text-white p-4 md:p-8 flex flex-col max-w-3xl mx-auto w-full">
-      <header className="flex items-center justify-between mb-8 pt-4">
-        <h1 className="text-3xl font-bold bg-gradient-to-r from-blue-400 to-emerald-400 bg-clip-text text-transparent">Záznamník</h1>
-        <button
-          onClick={() => setIsAdding(true)}
-          className="bg-blue-600 hover:bg-blue-500 text-white p-2 rounded-full transition-colors shadow-lg shadow-blue-500/20"
-        >
-          <Plus size={24} />
-        </button>
-      </header>
+    <main className="min-h-screen bg-slate-50 text-slate-900 font-sans selection:bg-indigo-100 relative overflow-hidden">
+      
+      {/* Decentní ambientní pozadí na vrchu stránky */}
+      <div className="absolute top-0 left-0 right-0 h-96 bg-gradient-to-b from-indigo-50/70 via-white/40 to-transparent pointer-events-none" />
+      <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-indigo-200/20 blur-[100px] rounded-full pointer-events-none" />
+      <div className="absolute top-[10%] right-[-5%] w-[30%] h-[30%] bg-sky-200/20 blur-[80px] rounded-full pointer-events-none" />
 
-      {isAdding && (
-        <div className="bg-neutral-900 border border-neutral-800 p-4 rounded-2xl mb-6 shadow-2xl animate-in fade-in slide-in-from-top-4">
+      <div className="max-w-xl mx-auto p-5 md:p-8 pt-16 md:pt-24 relative z-10 w-full">
+        
+        {/* Vstupní pole - Glassmorphism efekt */}
+        <form onSubmit={addNote} className="relative mb-8 group">
           <input
             type="text"
-            placeholder="Nadpis poznámky..."
-            className="w-full bg-transparent text-lg font-semibold outline-none mb-3 text-white placeholder-neutral-500"
-            value={newTitle}
-            onChange={(e) => setNewTitle(e.target.value)}
-          />
-          <textarea
-            placeholder="Začněte psát..."
-            className="w-full bg-transparent outline-none resize-none min-h-[120px] text-neutral-300 placeholder-neutral-600"
+            placeholder="Co je potřeba udělat?"
+            className="w-full text-lg pr-14 pl-6 py-5 rounded-3xl bg-white/70 backdrop-blur-xl border border-white/80 outline-none focus:ring-[3px] focus:ring-indigo-500/20 focus:border-indigo-300 transition-all shadow-sm hover:shadow-md placeholder:text-slate-400 text-slate-700"
             value={newContent}
             onChange={(e) => setNewContent(e.target.value)}
           />
-          <div className="flex justify-end gap-3 mt-4">
-            <button
-              onClick={() => setIsAdding(false)}
-              className="px-4 py-2 text-neutral-400 hover:text-white transition-colors"
-            >
-              Zrušit
-            </button>
-            <button
-              onClick={addNote}
-              className="px-6 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg font-medium transition-colors shadow-lg shadow-emerald-500/20"
-            >
-              Uložit
-            </button>
-          </div>
-        </div>
-      )}
+          <button
+            type="submit"
+            disabled={!newContent.trim()}
+            className="absolute right-2.5 top-2.5 bottom-2.5 w-12 flex items-center justify-center bg-slate-900 text-white rounded-2xl hover:bg-indigo-600 disabled:opacity-0 disabled:-translate-x-4 transition-all duration-300"
+            aria-label="Uložit"
+          >
+            <Plus size={24} strokeWidth={2.5} />
+          </button>
+        </form>
 
-      {loading ? (
-        <div className="flex-1 flex items-center justify-center text-neutral-500">
-          Načítání...
-        </div>
-      ) : notes.length === 0 && !isAdding ? (
-        <div className="flex-1 flex flex-col items-center justify-center text-neutral-500 mt-20">
-          <p className="text-lg">Zatím žádné poznámky</p>
-          <p className="text-sm mt-1">Klikněte na + pro přidání</p>
-        </div>
-      ) : (
-        <div className="grid gap-4">
-          {notes.map((note) => (
-            <div
-              key={note.id}
-              className="group bg-neutral-900 border border-neutral-800/50 hover:border-neutral-700 p-5 rounded-2xl transition-all"
-            >
-              <div className="flex justify-between items-start mb-2">
-                <h3 className="text-lg font-semibold text-white">
-                  {note.title || "Bez nadpisu"}
-                </h3>
-                <button
-                  onClick={() => deleteNote(note.id)}
-                  className="text-neutral-600 hover:text-red-400 transition-colors"
-                >
-                  <Trash2 size={18} />
-                </button>
-              </div>
-              <p className="text-neutral-400 whitespace-pre-wrap leading-relaxed">
-                {note.content}
-              </p>
-              <div className="text-xs text-neutral-600 mt-4">
-                {new Date(note.created_at).toLocaleDateString("cs-CZ", {
-                  day: "numeric",
-                  month: "long",
-                  hour: "2-digit",
-                  minute: "2-digit",
-                })}
-              </div>
+        {/* Seznam ala Premium To-Do */}
+        <div className="flex flex-col gap-2.5">
+          {loading ? (
+            <div className="text-center text-slate-400 mt-12 animate-pulse font-medium">Načítání...</div>
+          ) : notes.length === 0 ? (
+            <div className="text-center mt-24 text-slate-400">
+              <p className="text-lg">Vše splněno.</p>
+              <p className="text-sm mt-1 opacity-70">Užívejte si čistou hlavu.</p>
             </div>
-          ))}
+          ) : (
+            notes.map((note) => (
+              <div
+                key={note.id}
+                className={`group flex items-center gap-4 py-3.5 px-4 bg-white/60 backdrop-blur-md border border-white rounded-2xl hover:bg-white hover:shadow-sm transition-all duration-300 animate-in fade-in slide-in-from-bottom-2
+                  ${note.deleting ? "opacity-0 scale-95 pointer-events-none" : "opacity-100 scale-100"}
+                `}
+              >
+                {/* Přepínač (Checkbox) pro dokoncení */}
+                <button
+                  onClick={() => completeTask(note.id)}
+                  className="flex-shrink-0 text-slate-300 hover:text-indigo-500 hover:scale-110 active:scale-90 transition-all focus:outline-none"
+                  aria-label="Dokončit úkol"
+                >
+                  {note.deleting ? (
+                    <Check size={26} className="text-indigo-500 animate-in zoom-in" strokeWidth={3} />
+                  ) : (
+                    <Circle size={26} strokeWidth={2} />
+                  )}
+                </button>
+
+                {/* Obsah úkolu */}
+                <div className="flex-1 overflow-hidden">
+                  <p 
+                    className={`text-slate-700 whitespace-pre-wrap leading-relaxed text-[16px] transition-all duration-300 ease-out font-medium
+                      ${note.deleting ? "text-slate-300 line-through decoration-slate-300 decoration-2" : ""}
+                    `}
+                  >
+                    {note.content}
+                  </p>
+                </div>
+              </div>
+            ))
+          )}
         </div>
-      )}
+
+      </div>
     </main>
   );
 }
