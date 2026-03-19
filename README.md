@@ -1,36 +1,39 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# PWA Záznamník (Synchronizovaný s webem a mobilem)
 
-## Getting Started
+Tato aplikace slouží jako synchronizovaný poznámkový blok. Díky integraci **Next.js** a **Supabase** probíhá synchronizace okamžitě (Real-time). Můžete si ji nainstalovat z prohlížeče na mobil i plochu PC.
 
-First, run the development server:
+## 1. Zprovoznění Databáze (Supabase)
+1. Běžte na [supabase.com](https://supabase.com) a vytvořte si bezplatný účet/projekt.
+2. Ve vašem novém projektu přejděte do `SQL Editor` a vložte následující příkaz k vytvoření tabulky:
+   ```sql
+   CREATE TABLE notes (
+     id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
+     title text,
+     content text,
+     created_at timestamp with time zone DEFAULT timezone('utc'::text, now()) NOT NULL
+   );
+   ```
+3. Z nastavení projektu zkopírujte `Project URL` a `anon public key`.
+4. V lokálním projektu vytvořte `.env.local` ze šablony `.env.example` a vyplňte získané hodnoty.
 
+## 2. Nahrání na GitHub
+Otevřete terminál ve složce projektu a zadejte:
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+git add .
+git commit -m "Initial commit s PWA a UI"
+git branch -M main
+git remote add origin https://github.com/VASE_UZIVATELSKE_JMENO/VASE_REPO.git
+git push -u origin main
 ```
+*(Nezapomeňte si na GitHubu nejdříve vytvořit prázdný repozitář a nahradit odkaz svým.)*
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## 3. Nasazení na Vercel
+1. Přihlaste se na [Vercel.com](https://vercel.com) s vaším GitHub účtem.
+2. Klikněte na **Add New...** -> **Project**.
+3. Importujte váš nově nahraný repozitář `notes-pwa` (nebo pod libovolným jménem, které jste zvolili).
+4. **VELMI DŮLEŽITÉ:** V sekci **Environment Variables** nezapomeňte přidat:
+   - `NEXT_PUBLIC_SUPABASE_URL` a zadejte vaši URL.
+   - `NEXT_PUBLIC_SUPABASE_ANON_KEY` a zadejte váš klíč.
+5. Klikněte na **Deploy**.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
-
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
-
-## Learn More
-
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Během chvíle Vercel vygeneruje vaši unikátní URL, ze které bude aplikace přístupná. Stačí si ji otevřít v mobilu, kliknout v prohlížeči na `Přídat na domovskou obrazovku` a máte vlastní super rychlou aplikaci!
