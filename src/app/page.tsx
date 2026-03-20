@@ -17,14 +17,33 @@ export default function Home() {
   const [newContent, setNewContent] = useState("");
 
   useEffect(() => {
-    fetchNotes();
+    fetchNotes(true);
+
+    if (!process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL.includes("placeholder")) {
+      return;
+    }
+
+    const channel = supabase
+      .channel('realtime_notes')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'notes' },
+        () => {
+          fetchNotes(false); // Reload bez probliknutí
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, []);
 
-  async function fetchNotes() {
+  async function fetchNotes(showLoading = true) {
     try {
-      setLoading(true);
+      if (showLoading) setLoading(true);
       if (!process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL.includes("placeholder")) {
-        setLoading(false);
+        if (showLoading) setLoading(false);
         return;
       }
       const { data, error } = await supabase
@@ -40,7 +59,7 @@ export default function Home() {
     } catch (err) {
       console.error(err);
     } finally {
-      setLoading(false);
+      if (showLoading) setLoading(false);
     }
   }
 
