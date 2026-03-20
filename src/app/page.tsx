@@ -1,15 +1,23 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo, useRef } from "react";
 import { supabase } from "@/lib/supabase";
-import { Plus, Check, Circle, LogIn, Lock, Mail } from "lucide-react";
+import { Plus, Check, Circle, LogIn, Lock, Mail, GripVertical } from "lucide-react";
 import type { Session } from "@supabase/supabase-js";
+import { Reorder, AnimatePresence, motion } from "framer-motion";
 
 type Note = {
   id: string;
   content: string;
   created_at: string;
+  order_index?: number;
   deleting?: boolean;
+};
+
+// Pomocná funkce na parsování #hashtagů
+const extractTags = (text: string): string[] => {
+  const matches = text.match(/#[\p{L}\d_-]+/gu);
+  return matches ? Array.from(matches) : [];
 };
 
 export default function Home() {
@@ -22,24 +30,35 @@ export default function Home() {
   const [notes, setNotes] = useState<Note[]>([]);
   const [loading, setLoading] = useState(true);
   const [newContent, setNewContent] = useState("");
+  const [filterTag, setFilterTag] = useState<string | null>(null);
+  const [isUpdatingOrder, setIsUpdatingOrder] = useState(false);
+
+  // Všechny unikátní tagy ze všech poznámek
+  const allTags = useMemo(() => {
+    const tags = new Set<string>();
+    notes.forEach(n => extractTags(n.content).forEach(t => tags.add(t)));
+    return Array.from(tags).sort();
+  }, [notes]);
+
+  // Filtrované poznámky pro zobrazení
+  const displayedNotes = useMemo(() => {
+    if (!filterTag) return notes;
+    return notes.filter(n => extractTags(n.content).includes(filterTag as string));
+  }, [notes, filterTag]);
 
   useEffect(() => {
-    // 1. Zkontrolujeme, jestli existuje klíč na DB, pokud ne, povolíme přístup jako DEMO
     if (!process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL.includes("placeholder")) {
-      setSession({} as Session); // Dummy session pro localhost bez DB
+      setSession({} as Session);
       fetchNotes(true);
       return;
     }
 
-    // 2. Skutečná autentizace Supabase
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
       if (session) fetchNotes(true);
     });
 
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setSession(session);
       if (session) fetchNotes(true);
     });
@@ -48,7 +67,7 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
-    if (!session) return;
+    if (!session || isUpdatingOrder) return;
     if (!process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL.includes("placeholder")) {
       return;
     }
@@ -67,21 +86,14 @@ export default function Home() {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [session]);
+  }, [session, isUpdatingOrder]);
 
   async function handleLogin(e: React.FormEvent) {
     e.preventDefault();
     setAuthLoading(true);
     setAuthError("");
-    
-    const { error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
-    
-    if (error) {
-      setAuthError("Špatné přihlašovací údaje.");
-    }
+    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    if (error) setAuthError("Špatné přihlašovací údaje.");
     setAuthLoading(false);
   }
 
@@ -97,16 +109,15 @@ export default function Home() {
         if (showLoading) setLoading(false);
         return;
       }
+      
+      // Řazení primárně podle order_index (ruční), pak podle data
       const { data, error } = await supabase
         .from("notes")
         .select("*")
+        .order("order_index", { ascending: true, nullsFirst: false })
         .order("created_at", { ascending: false });
 
-      if (error) {
-        console.error("Chyba:", error.message);
-      } else {
-        setNotes(data || []);
-      }
+      if (!error && data) setNotes(data);
     } catch (err) {
       console.error(err);
     } finally {
@@ -119,26 +130,25 @@ export default function Home() {
     if (!newContent.trim()) return;
 
     if (!process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL.includes("placeholder")) {
-      const optimisticNote: Note = {
-        id: Date.now().toString(),
-        content: newContent,
-        created_at: new Date().toISOString(),
-      };
-      setNotes([optimisticNote, ...notes]);
+      setNotes([{ id: Date.now().toString(), content: newContent, created_at: new Date().toISOString() }, ...notes]);
       setNewContent("");
       return;
     }
 
     const contentToAdd = newContent;
     setNewContent("");
+    
+    // Nové položky dáme systematicky na začátek seznamu posunutím order_indexu
+    const minOrder = notes.length > 0 ? Math.min(...notes.map(n => n.order_index ?? 0)) : 0;
+    const newOrderIndex = minOrder - 1000;
 
     const { data, error } = await supabase
       .from("notes")
-      .insert([{ content: contentToAdd }])
+      .insert([{ content: contentToAdd, order_index: newOrderIndex }])
       .select();
 
     if (!error && data) {
-      setNotes((prev) => [data[0], ...prev]);
+      setNotes((prev) => [data[0], ...prev].sort((a,b) => (a.order_index??0) - (b.order_index??0)));
     }
   }
 
@@ -156,10 +166,42 @@ export default function Home() {
     }, 400);
   }
 
-  // --- LOGIN OBRAZOVKA ---
+  async function handleReorderItems(newOrder: Note[]) {
+    // 1. Změníme UI okamžitě
+    setNotes(newOrder);
+    setIsUpdatingOrder(true);
+    
+    // 2. Pošleme nový pořadní index (1, 2, 3...) do databáze (zpožděně/na pozadí)
+    if (process.env.NEXT_PUBLIC_SUPABASE_URL && !process.env.NEXT_PUBLIC_SUPABASE_URL.includes("placeholder")) {
+      const updates = newOrder.map((note, index) => ({
+        id: note.id,
+        order_index: index * 100 // indexování po 100 pro lepší plynulost
+      }));
+      
+      // Updatovat každý řádek (pro jednoduchost iterací)
+      for (const update of updates) {
+        await supabase.from("notes").update({ order_index: update.order_index }).eq("id", update.id);
+      }
+    }
+    
+    setIsUpdatingOrder(false);
+  }
+
+  // Zvýraznění #štítků v textu modrou barvou
+  const renderContentWithTags = (text: string) => {
+    const parts = text.split(/(#[\p{L}\d_-]+)/gu);
+    return parts.map((part, i) => {
+      if (part.startsWith('#')) {
+        return <span key={i} className="text-indigo-500 font-semibold">{part}</span>;
+      }
+      return <span key={i}>{part}</span>;
+    });
+  };
+
   if (!session) {
     return (
       <main className="min-h-screen bg-slate-50 flex items-center justify-center p-4 relative overflow-hidden">
+        {/* ... Identická Login obrazovka jako minule ... */}
         <div className="absolute top-0 left-0 right-0 h-96 bg-gradient-to-b from-indigo-50/70 via-white/40 to-transparent pointer-events-none" />
         <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-indigo-200/20 blur-[100px] rounded-full pointer-events-none" />
         
@@ -183,7 +225,7 @@ export default function Home() {
                 type="email"
                 required
                 placeholder="E-mail"
-                className="w-full pl-11 pr-4 py-3 bg-white border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 transition-all text-slate-700"
+                className="w-full pl-11 pr-4 py-3 bg-white border border-slate-200 rounded-xl outline-none focus:ring-[3px] focus:ring-indigo-500/20 focus:border-indigo-400 transition-all text-slate-700"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
               />
@@ -197,7 +239,7 @@ export default function Home() {
                 type="password"
                 required
                 placeholder="Heslo"
-                className="w-full pl-11 pr-4 py-3 bg-white border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 transition-all text-slate-700"
+                className="w-full pl-11 pr-4 py-3 bg-white border border-slate-200 rounded-xl outline-none focus:ring-[3px] focus:ring-indigo-500/20 focus:border-indigo-400 transition-all text-slate-700"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
               />
@@ -216,81 +258,133 @@ export default function Home() {
     );
   }
 
-  // --- HLAVNÍ APLIKACE ---
   return (
-    <main className="min-h-screen bg-slate-50 text-slate-900 font-sans selection:bg-indigo-100 relative overflow-hidden">
+    <main className="min-h-screen bg-slate-50 text-slate-900 font-sans selection:bg-indigo-100 relative overflow-hidden flex flex-col items-center">
       <div className="absolute top-0 left-0 right-0 h-96 bg-gradient-to-b from-indigo-50/70 via-white/40 to-transparent pointer-events-none" />
       <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-indigo-200/20 blur-[100px] rounded-full pointer-events-none" />
-      <div className="absolute top-[10%] right-[-5%] w-[30%] h-[30%] bg-sky-200/20 blur-[80px] rounded-full pointer-events-none" />
 
-      <div className="max-w-xl mx-auto p-5 md:p-8 pt-12 md:pt-20 relative z-10 w-full flex flex-col h-screen">
+      <div className="max-w-2xl mx-auto p-4 md:p-8 pt-8 md:pt-14 relative z-10 w-full flex flex-col h-screen">
         
-        {/* Hlavička s odhlášením (elegantní a tichá) */}
         {!process.env.NEXT_PUBLIC_SUPABASE_URL?.includes("placeholder") && (
-          <div className="flex justify-end mb-6">
-             <button onClick={handleLogout} className="text-xs font-medium text-slate-400 hover:text-slate-600 uppercase tracking-wider transition-colors">Uzamknout</button>
+          <div className="flex justify-end mb-4 shrink-0">
+             <button onClick={handleLogout} className="text-[11px] font-bold text-slate-400 hover:text-slate-600 uppercase tracking-wider transition-colors bg-white/50 px-3 py-1.5 rounded-full border border-slate-200/60 shadow-sm backdrop-blur-md">Uzamknout</button>
           </div>
         )}
 
+        {/* Filtr Štítků */}
+        <div className="shrink-0 mb-6">
+          <AnimatePresence>
+            {allTags.length > 0 && (
+              <motion.div 
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: 'auto' }}
+                exit={{ opacity: 0, height: 0 }}
+                className="flex gap-2.5 overflow-x-auto pb-2 scrollbar-hide my-1"
+              >
+                {allTags.map((tag) => (
+                  <button
+                    key={tag}
+                    onClick={() => setFilterTag(t => t === tag ? null : tag)}
+                    className={`shrink-0 px-3.5 py-1.5 rounded-full text-xs font-bold font-mono tracking-wide transition-all duration-200 border shadow-sm ${
+                      filterTag === tag 
+                        ? 'bg-indigo-600 text-white border-indigo-700 shadow-indigo-500/20' 
+                        : 'bg-white text-slate-500 border-slate-200/80 hover:border-indigo-300 hover:text-indigo-600'
+                    }`}
+                  >
+                    {tag}
+                  </button>
+                ))}
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
+
         {/* Vstupní pole */}
-        <form onSubmit={addNote} className="relative mb-8 group shrink-0">
+        <form onSubmit={addNote} className="relative mb-6 group shrink-0">
           <input
             type="text"
-            placeholder="Co je potřeba udělat?"
-            className="w-full text-lg pr-14 pl-6 py-5 rounded-3xl bg-white/70 backdrop-blur-xl border border-white/80 outline-none focus:ring-[3px] focus:ring-indigo-500/20 focus:border-indigo-300 transition-all shadow-sm hover:shadow-md placeholder:text-slate-400 text-slate-700"
+            placeholder="Přidejte úkol (vložte např. #škola)..."
+            className="w-full text-lg pr-14 pl-6 py-4 rounded-3xl bg-white/80 backdrop-blur-xl border border-white/90 outline-none focus:ring-[3px] focus:ring-indigo-500/20 focus:border-indigo-300 transition-all shadow-sm hover:shadow-md placeholder:text-slate-400 text-slate-800 font-medium"
             value={newContent}
             onChange={(e) => setNewContent(e.target.value)}
           />
           <button
             type="submit"
             disabled={!newContent.trim()}
-            className="absolute right-2.5 top-2.5 bottom-2.5 w-12 flex items-center justify-center bg-slate-900 text-white rounded-2xl hover:bg-indigo-600 disabled:opacity-0 disabled:-translate-x-4 transition-all duration-300"
+            className="absolute right-2 top-2 bottom-2 w-12 flex items-center justify-center bg-slate-900 text-white rounded-2xl hover:bg-indigo-600 disabled:opacity-0 disabled:-translate-x-3 transition-all duration-300"
             aria-label="Uložit"
           >
-            <Plus size={24} strokeWidth={2.5} />
+            <Plus size={22} strokeWidth={2.5} />
           </button>
         </form>
 
-        {/* Seznam */}
-        <div className="flex flex-col gap-2.5 flex-1 overflow-y-auto pb-10 scrollbar-hide">
+        {/* Drag & Drop Reorder Líst */}
+        <div className="flex-1 overflow-y-auto pb-10 scrollbar-hide -mx-2 px-2">
           {loading && notes.length === 0 ? (
-            <div className="text-center text-slate-400 mt-12 animate-pulse font-medium">Načítání...</div>
+            <div className="text-center text-slate-400 mt-12 animate-pulse font-medium">Načítání úkolů...</div>
           ) : notes.length === 0 ? (
-            <div className="text-center mt-24 text-slate-400">
-              <p className="text-lg">Vše splněno.</p>
-              <p className="text-sm mt-1 opacity-70">Užívejte si čistou hlavu.</p>
+            <div className="text-center mt-20 text-slate-400/80">
+              <p className="text-lg font-medium">Nic tu není.</p>
+              <p className="text-sm mt-1">Užívejte si čistou mysl.</p>
+            </div>
+          ) : filterTag && displayedNotes.length === 0 ? (
+           <div className="text-center mt-12 text-slate-400">
+              <p>Žádné úkoly pro tento štítek.</p>
             </div>
           ) : (
-            notes.map((note) => (
-              <div
-                key={note.id}
-                className={`group flex items-center gap-4 py-3.5 px-4 bg-white/60 backdrop-blur-md border border-white rounded-2xl hover:bg-white hover:shadow-sm transition-all duration-300 animate-in fade-in slide-in-from-top-2
-                  ${note.deleting ? "opacity-0 scale-95 pointer-events-none" : "opacity-100 scale-100"}
-                `}
-              >
-                <button
-                  onClick={() => completeTask(note.id)}
-                  className="flex-shrink-0 text-slate-300 hover:text-indigo-500 hover:scale-110 active:scale-90 transition-all focus:outline-none"
-                  aria-label="Dokončit úkol"
-                >
-                  {note.deleting ? (
-                    <Check size={26} className="text-indigo-500 animate-in zoom-in" strokeWidth={3} />
-                  ) : (
-                    <Circle size={26} strokeWidth={2} />
-                  )}
-                </button>
-
-                <div className="flex-1 overflow-hidden">
-                  <p 
-                    className={`text-slate-700 whitespace-pre-wrap leading-relaxed text-[16px] transition-all duration-300 ease-out font-medium
-                      ${note.deleting ? "text-slate-300 line-through decoration-slate-300 decoration-2" : ""}
+            <Reorder.Group 
+              axis="y" 
+              values={filterTag ? displayedNotes : notes} 
+              onReorder={filterTag ? () => {} : handleReorderItems} 
+              className="flex flex-col gap-3"
+            >
+              <AnimatePresence>
+                {displayedNotes.map((note) => (
+                  <Reorder.Item
+                    key={note.id}
+                    value={note}
+                    id={note.id}
+                    dragListener={!filterTag} // Zákaz tažení pokud je aktivní filtr (rozhodilo by to indexy)
+                    className={`group relative flex items-center gap-3 py-3 px-4 md:px-5 bg-white backdrop-blur-md border border-slate-100 rounded-2xl hover:shadow-md hover:border-white transition-shadow cursor-default
+                      ${note.deleting ? "opacity-0 scale-95 pointer-events-none" : "opacity-100 scale-100"}
                     `}
+                    initial={{ opacity: 0, scale: 0.95, y: 10 }}
+                    animate={{ opacity: 1, scale: 1, y: 0 }}
+                    exit={{ opacity: 0, scale: 0.95, height: 0, margin: 0, padding: 0 }}
+                    whileDrag={{ scale: 1.02, boxShadow: "0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1)", zIndex: 50, cursor: 'grabbing' }}
                   >
-                    {note.content}
-                  </p>
-                </div>
-              </div>
-            ))
+                    
+                    {/* Drag Handle (Grip) */}
+                    {!filterTag && (
+                      <div className="cursor-grab active:cursor-grabbing text-slate-200 hover:text-slate-400 -ml-2 p-1 touch-none">
+                        <GripVertical size={18} />
+                      </div>
+                    )}
+
+                    <button
+                      onClick={() => completeTask(note.id)}
+                      className="flex-shrink-0 text-slate-300 hover:text-indigo-500 hover:scale-110 active:scale-90 transition-all focus:outline-none"
+                    >
+                      {note.deleting ? (
+                        <Check size={26} className="text-indigo-500 animate-in zoom-in" strokeWidth={3} />
+                      ) : (
+                        <Circle size={26} strokeWidth={2.5} />
+                      )}
+                    </button>
+
+                    <div className="flex-1 overflow-hidden">
+                      <p 
+                        className={`text-slate-700 whitespace-pre-wrap leading-relaxed text-[16px] transition-all duration-300 ease-out font-medium
+                          ${note.deleting ? "text-slate-300 line-through decoration-slate-300 decoration-2" : ""}
+                        `}
+                      >
+                        {renderContentWithTags(note.content)}
+                      </p>
+                    </div>
+                  </Reorder.Item>
+                ))}
+              </AnimatePresence>
+            </Reorder.Group>
           )}
         </div>
 

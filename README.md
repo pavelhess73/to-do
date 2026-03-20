@@ -10,9 +10,11 @@ Tato aplikace slouží jako synchronizovaný poznámkový blok. Díky integraci 
      id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
      title text,
      content text,
+     order_index int4,
      created_at timestamp with time zone DEFAULT timezone('utc'::text, now()) NOT NULL
    );
    ```
+   *(Pokud tabulku už máte, stačí v SQL editoru přidat nový sloupec: `ALTER TABLE notes ADD COLUMN order_index int4;`)*
 3. Z nastavení projektu zkopírujte `Project URL` a `anon public key`.
 4. V lokálním projektu vytvořte `.env.local` ze šablony `.env.example` a vyplňte získané hodnoty.
 5. **DŮLEŽITÉ:** Pro fungování "Real-time" synchronizace jděte zleva v menu do sekce `Database` -> `Replication`, klikněte na "Source", zapněte tabulku `notes` a celou replikaci uložte. Tím se poznámky objeví z mobilu do vteřiny on-line v PC.
