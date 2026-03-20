@@ -32,6 +32,16 @@ export default function Home() {
   const [newContent, setNewContent] = useState("");
   const [filterTag, setFilterTag] = useState<string | null>(null);
   const [isUpdatingOrder, setIsUpdatingOrder] = useState(false);
+  const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
+
+  const CATEGORIES = useMemo(() => [
+    { tag: "#osobní", colorClass: "bg-blue-50/90 border-blue-200 hover:border-blue-300", dotClass: "bg-blue-400 focus:bg-blue-500" },
+    { tag: "#práce", colorClass: "bg-emerald-50/90 border-emerald-200 hover:border-emerald-300", dotClass: "bg-emerald-400 focus:bg-emerald-500" },
+    { tag: "#nákup", colorClass: "bg-orange-50/90 border-orange-200 hover:border-orange-300", dotClass: "bg-orange-400 focus:bg-orange-500" },
+    { tag: "#hlavní", colorClass: "bg-rose-50/90 border-rose-200 hover:border-rose-300", dotClass: "bg-rose-400 focus:bg-rose-500" },
+    { tag: "#finance", colorClass: "bg-amber-50/90 border-amber-200 hover:border-amber-300", dotClass: "bg-amber-400 focus:bg-amber-500" },
+    { tag: "#ostatní", colorClass: "bg-slate-100/90 border-slate-200 hover:border-slate-300", dotClass: "bg-slate-400 focus:bg-slate-500" },
+  ], []);
 
   // Všechny unikátní tagy ze všech poznámek
   const allTags = useMemo(() => {
@@ -110,7 +120,6 @@ export default function Home() {
         return;
       }
       
-      // Řazení primárně podle order_index (ruční), pak podle data
       const { data, error } = await supabase
         .from("notes")
         .select("*")
@@ -131,22 +140,8 @@ export default function Home() {
 
     let contentToAdd = newContent.trim();
 
-    // 🧠 Chytrá detekce štítků podle obsahu, pokud uživatel sám žádný nenapsal
-    if (!contentToAdd.includes('#')) {
-      const lower = contentToAdd.toLowerCase();
-      if (/(koupit|nákup|rohlík|mléko|chleba|kaufland|lidl|tesco|alza|večeř|jídlo|pivo|víno)/.test(lower)) {
-        contentToAdd += " #nákup";
-      } else if (/(zavolat|napsat|mail|zjistit|telefon|vyřídit|odepsat|zpráva|email)/.test(lower)) {
-        contentToAdd += " #komunikace";
-      } else if (/(zaplatit|účet|faktura|peníze|banka|složenka|daň|nájem)/.test(lower)) {
-        contentToAdd += " #finance";
-      } else if (/(práce|šéf|porada|klient|projekt|schůzka|kolega|report|office)/.test(lower)) {
-        contentToAdd += " #práce";
-      } else if (/(uklidit|vyprat|vyluxovat|doma|opravit|zahrada|koš|nádobí)/.test(lower)) {
-        contentToAdd += " #domácnost";
-      } else if (/(doktor|zubař|lékárna|léky|zdraví|cvičit|fitko|běhat|trénink)/.test(lower)) {
-        contentToAdd += " #zdraví";
-      }
+    if (selectedCategory && !contentToAdd.includes(selectedCategory)) {
+        contentToAdd += ` ${selectedCategory}`;
     }
 
     if (!process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL.includes("placeholder")) {
@@ -157,10 +152,12 @@ export default function Home() {
       };
       setNotes([optimisticNote, ...notes]);
       setNewContent("");
+      setSelectedCategory(null);
       return;
     }
 
     setNewContent("");
+    setSelectedCategory(null);
     
     // Nové položky dáme systematicky na začátek seznamu posunutím order_indexu
     const minOrder = notes.length > 0 ? Math.min(...notes.map(n => n.order_index ?? 0)) : 0;
@@ -215,6 +212,9 @@ export default function Home() {
   const getTagColor = (tag: string | null) => {
     if (!tag) return "bg-white border-slate-100 hover:border-white";
     
+    const matchedCategory = CATEGORIES.find(c => c.tag === tag);
+    if (matchedCategory) return matchedCategory.colorClass;
+
     // Paleta pastelových barev pro poznámky
     const colors = [
       "bg-red-50/90 border-red-200 hover:border-red-300",
@@ -239,7 +239,6 @@ export default function Home() {
   if (!session) {
     return (
       <main className="min-h-screen bg-slate-50 flex items-center justify-center p-4 relative overflow-hidden">
-        {/* ... Identická Login obrazovka jako minule ... */}
         <div className="absolute top-0 left-0 right-0 h-96 bg-gradient-to-b from-indigo-50/70 via-white/40 to-transparent pointer-events-none" />
         <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-indigo-200/20 blur-[100px] rounded-full pointer-events-none" />
         
@@ -329,7 +328,7 @@ export default function Home() {
                         : 'bg-white text-slate-500 border-slate-200/80 hover:border-indigo-300 hover:text-indigo-600'
                     }`}
                   >
-                    {tag}
+                    {tag.replace('#', '')}
                   </button>
                 ))}
               </motion.div>
@@ -338,22 +337,41 @@ export default function Home() {
         </div>
 
         {/* Vstupní pole */}
-        <form onSubmit={addNote} className="relative mb-6 group shrink-0">
+        <form onSubmit={addNote} className="relative mb-8 group shrink-0">
           <input
             type="text"
-            placeholder="Přidejte úkol (vložte např. #škola)..."
-            className="w-full text-lg pr-14 pl-6 py-4 rounded-3xl bg-white/80 backdrop-blur-xl border border-white/90 outline-none focus:ring-[3px] focus:ring-indigo-500/20 focus:border-indigo-300 transition-all shadow-sm hover:shadow-md placeholder:text-slate-400 text-slate-800 font-medium"
+            placeholder="Přidejte úkol..."
+            className="w-full text-lg pr-14 pl-6 py-4 rounded-t-3xl rounded-b-xl bg-white/80 backdrop-blur-xl border border-white/90 outline-none focus:ring-[3px] focus:ring-indigo-500/20 focus:border-indigo-300 transition-all shadow-sm hover:shadow-md placeholder:text-slate-400 text-slate-800 font-medium"
             value={newContent}
             onChange={(e) => setNewContent(e.target.value)}
           />
           <button
             type="submit"
             disabled={!newContent.trim()}
-            className="absolute right-2 top-2 bottom-2 w-12 flex items-center justify-center bg-slate-900 text-white rounded-2xl hover:bg-indigo-600 disabled:opacity-0 disabled:-translate-x-3 transition-all duration-300"
+            className="absolute right-2 top-2 bottom-12 w-12 h-11 flex items-center justify-center bg-slate-900 text-white rounded-xl hover:bg-indigo-600 disabled:opacity-0 disabled:-translate-x-3 transition-all duration-300 z-10"
             aria-label="Uložit"
           >
             <Plus size={22} strokeWidth={2.5} />
           </button>
+
+          {/* Výběr barvy - Kuličky */}
+          <div className="flex items-center gap-3 px-6 pt-2 pb-1 bg-white/40 backdrop-blur-md rounded-b-3xl border-x border-b border-white/90 shadow-sm mt-[1px]">
+            <span className="text-[11px] text-slate-400 font-semibold tracking-wider uppercase mr-1">Téma:</span>
+            {CATEGORIES.map(c => (
+              <button
+                key={c.tag}
+                type="button"
+                onClick={() => setSelectedCategory(c.tag === selectedCategory ? null : c.tag)}
+                className={`w-5 h-5 rounded-full transition-all duration-200 outline-none ${c.dotClass} ${
+                  selectedCategory === c.tag 
+                    ? 'ring-2 ring-offset-2 ring-slate-800 scale-110 shadow-md' 
+                    : 'hover:scale-110 opacity-70 hover:opacity-100 hover:shadow-sm'
+                }`}
+                aria-label={c.tag.replace('#', '')}
+                title={c.tag.replace('#', '')}
+              />
+            ))}
+          </div>
         </form>
 
         {/* Drag & Drop Reorder Líst */}
@@ -407,7 +425,7 @@ export default function Home() {
 
                     <button
                       onClick={() => completeTask(note.id)}
-                      className="flex-shrink-0 text-slate-400 hover:text-indigo-500 hover:scale-110 active:scale-90 transition-all focus:outline-none bg-white rounded-full"
+                      className="flex-shrink-0 text-slate-400 hover:text-indigo-500 hover:scale-110 active:scale-90 transition-all focus:outline-none bg-white/50 hover:bg-white rounded-full p-[2px]"
                     >
                       {note.deleting ? (
                         <Check size={26} className="text-indigo-500 animate-in zoom-in" strokeWidth={3} />
