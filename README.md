@@ -16,6 +16,7 @@ Tato aplikace slouží jako synchronizovaný poznámkový blok. Díky integraci 
 3. Z nastavení projektu zkopírujte `Project URL` a `anon public key`.
 4. V lokálním projektu vytvořte `.env.local` ze šablony `.env.example` a vyplňte získané hodnoty.
 5. **DŮLEŽITÉ:** Pro fungování "Real-time" synchronizace jděte zleva v menu do sekce `Database` -> `Replication`, klikněte na "Source", zapněte tabulku `notes` a celou replikaci uložte. Tím se poznámky objeví z mobilu do vteřiny on-line v PC.
+6. **ZABEZPEČENÍ:** Aplikace je kvůli vašemu soukromí nově zajištěná přihlášením. Jděte v Supabase do sekce `Authentication` -> `Users`, klikněte na `Add User` -> `Create new user`. Zadejte svůj e-mail a silné heslo (nechte zaškrtnuté "Auto Confirm User?"). Pomocí těchto údajů se od nynějška do aplikace přihlásíte jako jediný majitel.
 
 ## 2. Nahrání na GitHub
 Otevřete terminál ve složce projektu a zadejte:
