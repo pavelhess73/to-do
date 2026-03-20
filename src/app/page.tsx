@@ -129,13 +129,37 @@ export default function Home() {
     if (e) e.preventDefault();
     if (!newContent.trim()) return;
 
+    let contentToAdd = newContent.trim();
+
+    // 🧠 Chytrá detekce štítků podle obsahu, pokud uživatel sám žádný nenapsal
+    if (!contentToAdd.includes('#')) {
+      const lower = contentToAdd.toLowerCase();
+      if (/(koupit|nákup|rohlík|mléko|chleba|kaufland|lidl|tesco|alza|večeř|jídlo|pivo|víno)/.test(lower)) {
+        contentToAdd += " #nákup";
+      } else if (/(zavolat|napsat|mail|zjistit|telefon|vyřídit|odepsat|zpráva|email)/.test(lower)) {
+        contentToAdd += " #komunikace";
+      } else if (/(zaplatit|účet|faktura|peníze|banka|složenka|daň|nájem)/.test(lower)) {
+        contentToAdd += " #finance";
+      } else if (/(práce|šéf|porada|klient|projekt|schůzka|kolega|report|office)/.test(lower)) {
+        contentToAdd += " #práce";
+      } else if (/(uklidit|vyprat|vyluxovat|doma|opravit|zahrada|koš|nádobí)/.test(lower)) {
+        contentToAdd += " #domácnost";
+      } else if (/(doktor|zubař|lékárna|léky|zdraví|cvičit|fitko|běhat|trénink)/.test(lower)) {
+        contentToAdd += " #zdraví";
+      }
+    }
+
     if (!process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL.includes("placeholder")) {
-      setNotes([{ id: Date.now().toString(), content: newContent, created_at: new Date().toISOString() }, ...notes]);
+      const optimisticNote: Note = {
+        id: Date.now().toString(),
+        content: contentToAdd,
+        created_at: new Date().toISOString(),
+      };
+      setNotes([optimisticNote, ...notes]);
       setNewContent("");
       return;
     }
 
-    const contentToAdd = newContent;
     setNewContent("");
     
     // Nové položky dáme systematicky na začátek seznamu posunutím order_indexu
