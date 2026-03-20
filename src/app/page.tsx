@@ -187,15 +187,29 @@ export default function Home() {
     setIsUpdatingOrder(false);
   }
 
-  // Zvýraznění #štítků v textu modrou barvou
-  const renderContentWithTags = (text: string) => {
-    const parts = text.split(/(#[\p{L}\d_-]+)/gu);
-    return parts.map((part, i) => {
-      if (part.startsWith('#')) {
-        return <span key={i} className="text-indigo-500 font-semibold">{part}</span>;
-      }
-      return <span key={i}>{part}</span>;
-    });
+  // Získání barvy podle tagu
+  const getTagColor = (tag: string | null) => {
+    if (!tag) return "bg-white border-slate-100 hover:border-white";
+    
+    // Paleta pastelových barev pro poznámky
+    const colors = [
+      "bg-red-50/90 border-red-200 hover:border-red-300",
+      "bg-orange-50/90 border-orange-200 hover:border-orange-300",
+      "bg-amber-50/90 border-amber-200 hover:border-amber-300",
+      "bg-emerald-50/90 border-emerald-200 hover:border-emerald-300",
+      "bg-cyan-50/90 border-cyan-200 hover:border-cyan-300",
+      "bg-blue-50/90 border-blue-200 hover:border-blue-300",
+      "bg-indigo-50/90 border-indigo-200 hover:border-indigo-300",
+      "bg-violet-50/90 border-violet-200 hover:border-violet-300",
+      "bg-fuchsia-50/90 border-fuchsia-200 hover:border-fuchsia-300",
+      "bg-rose-50/90 border-rose-200 hover:border-rose-300",
+    ];
+    
+    let hash = 0;
+    for (let i = 0; i < tag.length; i++) {
+      hash = tag.charCodeAt(i) + ((hash << 5) - hash);
+    }
+    return colors[Math.abs(hash) % colors.length];
   };
 
   if (!session) {
@@ -339,13 +353,19 @@ export default function Home() {
               className="flex flex-col gap-3"
             >
               <AnimatePresence>
-                {displayedNotes.map((note) => (
+                {displayedNotes.map((note) => {
+                  const primaryTag = extractTags(note.content)[0] || null;
+                  const colorClass = getTagColor(primaryTag);
+                  const cleanContent = note.content.replace(/#[\p{L}\d_-]+/gu, '').replace(/\s+/g, ' ').trim() || (primaryTag ? `[${primaryTag.replace('#', '')}]` : '');
+
+                  return (
                   <Reorder.Item
                     key={note.id}
                     value={note}
                     id={note.id}
-                    dragListener={!filterTag} // Zákaz tažení pokud je aktivní filtr (rozhodilo by to indexy)
-                    className={`group relative flex items-center gap-3 py-3 px-4 md:px-5 bg-white backdrop-blur-md border border-slate-100 rounded-2xl hover:shadow-md hover:border-white transition-shadow cursor-default
+                    dragListener={!filterTag} // Zákaz tažení pokud je aktivní filtr
+                    className={`group relative flex items-center gap-3 py-3 px-4 md:px-5 backdrop-blur-md rounded-2xl hover:shadow-md transition-shadow cursor-default border
+                      ${colorClass}
                       ${note.deleting ? "opacity-0 scale-95 pointer-events-none" : "opacity-100 scale-100"}
                     `}
                     initial={{ opacity: 0, scale: 0.95, y: 10 }}
@@ -356,14 +376,14 @@ export default function Home() {
                     
                     {/* Drag Handle (Grip) */}
                     {!filterTag && (
-                      <div className="cursor-grab active:cursor-grabbing text-slate-200 hover:text-slate-400 -ml-2 p-1 touch-none">
+                      <div className="cursor-grab active:cursor-grabbing text-slate-300 hover:text-slate-500 -ml-2 p-1 touch-none">
                         <GripVertical size={18} />
                       </div>
                     )}
 
                     <button
                       onClick={() => completeTask(note.id)}
-                      className="flex-shrink-0 text-slate-300 hover:text-indigo-500 hover:scale-110 active:scale-90 transition-all focus:outline-none"
+                      className="flex-shrink-0 text-slate-400 hover:text-indigo-500 hover:scale-110 active:scale-90 transition-all focus:outline-none bg-white rounded-full"
                     >
                       {note.deleting ? (
                         <Check size={26} className="text-indigo-500 animate-in zoom-in" strokeWidth={3} />
@@ -374,15 +394,15 @@ export default function Home() {
 
                     <div className="flex-1 overflow-hidden">
                       <p 
-                        className={`text-slate-700 whitespace-pre-wrap leading-relaxed text-[16px] transition-all duration-300 ease-out font-medium
-                          ${note.deleting ? "text-slate-300 line-through decoration-slate-300 decoration-2" : ""}
+                        className={`text-slate-800 whitespace-pre-wrap leading-relaxed text-[16px] transition-all duration-300 ease-out font-medium
+                          ${note.deleting ? "text-slate-400 line-through decoration-slate-400 decoration-2" : ""}
                         `}
                       >
-                        {renderContentWithTags(note.content)}
+                        {cleanContent}
                       </p>
                     </div>
                   </Reorder.Item>
-                ))}
+                )})}
               </AnimatePresence>
             </Reorder.Group>
           )}
